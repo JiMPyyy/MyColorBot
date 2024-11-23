@@ -1,0 +1,76 @@
+import pygame
+import sys
+import os
+
+# Initialize pygame
+pygame.init()
+
+# Set up the display window
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Draw Rectangle on Image")
+
+# Define colors
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+
+# Load background image (prompt user to select it)
+image_path = input("Enter the path to the image file: ")
+
+# Check if the image exists
+if not os.path.isfile(image_path):
+    print(f"Error: {image_path} does not exist. Using a default background.")
+    image_path = None
+
+# Load the image as the background (if available)
+if image_path:
+    background_image = pygame.image.load(image_path)
+    background_image = pygame.transform.scale(background_image, (800, 600))  # Scale to fit the screen size
+else:
+    # If no image, use a white background
+    background_image = pygame.Surface((800, 600))
+    background_image.fill(WHITE)
+
+# Variables to track the rectangle
+start_pos = None
+end_pos = None
+drawing = False
+
+# Run the game loop
+while True:
+    screen.fill(WHITE)  # Fill the screen with white color
+    
+    # Draw the background image if it's loaded
+    screen.blit(background_image, (0, 0))
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        
+        # Start drawing the rectangle on mouse down
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            start_pos = event.pos
+            drawing = True
+        
+        # Update the end position while dragging
+        if event.type == pygame.MOUSEMOTION and drawing:
+            end_pos = event.pos
+        
+        # Finish drawing the rectangle on mouse up
+        if event.type == pygame.MOUSEBUTTONUP:
+            end_pos = event.pos
+            drawing = False
+            
+            # Calculate and print the rectangle's coordinates (top-left x, top-left y, width, height)
+            if start_pos and end_pos:  # Ensure both start and end positions are not None
+                x, y = start_pos
+                width = end_pos[0] - x
+                height = end_pos[1] - y
+                print(f"Rectangle Coordinates: (x: {x}, y: {y}, width: {width}, height: {height})")
+    
+    # Only draw the rectangle if end_pos is defined
+    if drawing and start_pos and end_pos:
+        pygame.draw.rect(screen, RED, pygame.Rect(start_pos, (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1])), 2)
+    
+    # Update the display
+    pygame.display.update()

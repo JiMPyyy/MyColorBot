@@ -12,12 +12,13 @@ time.sleep(3)
 # Path to the image you want to find (Tree image)
 IMAGE_PATH = r'C:\Users\potte\OneDrive\Desktop\OSRSTreePNG.PNG'  # Make sure this path is correct
 
-# Path to inventory slot reference image (you can create this using screenshot of a full inventory slot)
+# Path to inventory slot reference image (you can create this using a screenshot of a full inventory slot)
 INVENTORY_SLOT_PATH = r'C:\Users\potte\OneDrive\Desktop\FullInventory.png'
 
-# Global variables for dynamically selected regions
-tree_region = None
-inventory_region = None
+# Global variables for manually defined regions
+# Manually set the (x, y, width, height) for the tree and inventory regions
+tree_region = (50, 25, 800, 800)  # Example (x, y, width, height) for the tree region
+inventory_region = (900, 100, 400, 800)  # Example (x, y, width, height) for the inventory region
 
 # Function to focus on the game window before clicking
 def focus_game_window():
@@ -32,94 +33,52 @@ def focus_game_window():
         print("Error: Could not find the game window. Make sure the game is running and the title is correct.")
         exit()
 
-# Function to allow user to select a region dynamically
-def select_region(title="Select Region"):
-    screenshot = pyautogui.screenshot()
-    screenshot = np.array(screenshot)
-    screenshot = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
-    
-    # Allow user to select the region
-    roi = cv2.selectROI(title, screenshot)  # This will open a window for the user to select the ROI
-    cv2.destroyAllWindows()  # Close the OpenCV window after selection
-    
-    # Debugging: Display the selected region to verify alignment
-    x, y, w, h = roi
-    cv2.rectangle(screenshot, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    cv2.imshow(f"Selected Region - {title}", screenshot)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    
-    return roi  # Returns the (x, y, width, height) of the selected region
+# Function to highlight regions on the screenshot
+def highlight_region(screenshot, region, color=(0, 255, 0)):
+    """Draw a rectangle around the specified region."""
+    x, y, w, h = region
+    # Draw a rectangle on the screenshot
+    cv2.rectangle(screenshot, (x, y), (x + w, y + h), color, 2)  # Green rectangle with thickness=2
+    return screenshot
 
-# Function to find and click the tree image with a longer click
-def find_and_click_tree():
-    if tree_region is None:
-        print("Tree region is not defined.")
-        return
+# Function to check if the inventory is full by using the inventory slot reference image
+def is_inventory_full(screenshot, inventory_region):
+    # Load the inventory slot reference image
+    slot_template = cv2.imread(INVENTORY_SLOT_PATH)
 
-    # Take a screenshot of the screen using pyautogui
-    screenshot = pyautogui.screenshot()
+    if slot_template is None:
+        print("Error: Inventory slot template image could not be loaded.")
+        return False
 
-    # Convert screenshot from RGB (PIL) to BGR (OpenCV format)
-    screenshot = np.array(screenshot)  # Convert to NumPy array
-    screenshot = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR
+    # Convert screenshot and template to grayscale for matching
+    screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+    slot_template_gray = cv2.cvtColor(slot_template, cv2.COLOR_BGR2GRAY)
 
-    # Crop the image to the selected tree region
-    tree_screenshot = screenshot[tree_region[1]:tree_region[1] + tree_region[3], tree_region[0]:tree_region[0] + tree_region[2]]
+    # Define the area of the inventory in the screenshot
+    x, y, w, h = inventory_region
+    inventory_area = screenshot_gray[y:y+h, x:x+w]
 
-    # Load the image you want to search for (template)
-    template = cv2.imread(IMAGE_PATH)
+    # Perform template matching to find each inventory slot in the inventory area
+    result = cv2.matchTemplate(inventory_area, slot_template_gray, cv2.TM_CCOEFF_NORMED)
 
-    # Check if the template was loaded correctly
-    if template is None:
-        print(f"Error: Template image could not be loaded from {IMAGE_PATH}")
-        return
-
-    # Convert both the screenshot and the template to grayscale
-    tree_screenshot_gray = cv2.cvtColor(tree_screenshot, cv2.COLOR_BGR2GRAY)
-    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-
-    # Perform template matching on grayscale images
-    result = cv2.matchTemplate(tree_screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
-
-    # Get the locations of the matches
-    threshold = 0.4  # Minimum match confidence (adjust as needed)
+    # Define a threshold for matching
+    threshold = 0.8  # Adjust this as needed for sensitivity
     locations = np.where(result >= threshold)
 
-    # If we find a match, draw a rectangle around each match and click on the best match
-    if len(locations[0]) > 0 and len(locations[1]) > 0:
-        print(f"Found {len(locations[0])} matches.")
-        
-        # Use cv2.minMaxLoc to find the best match
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+    # Check if all inventory slots are filled
+    num_matches = len(locations[0])  # How many slots matched the reference image
+    expected_num_matches = (w // slot_template.shape[1]) * (h // slot_template.shape[0])  # Total slots in the region
 
-        # The best match is where the maximum value is
-        best_match = max_loc
-        center = (best_match[0] + tree_region[0] + template.shape[1] // 2, best_match[1] + tree_region[1] + template.shape[0] // 2)
-        print(f"Clicking on best match at: {center}")
-        
-        # Focus the game window before clicking
-        focus_game_window()
-        
-        # Ensure the game window is focused before clicking
-        time.sleep(0.5)
+    print(f"Found {num_matches} matches out of {expected_num_matches} expected.")
+    
+    # If the number of matches equals the expected number, the inventory is full
+    return num_matches == expected_num_matches
 
-        # Simulate the "press-and-hold" mouse click (longer click)
-        pyautogui.moveTo(center)  # Move the mouse to the target location
-        pyautogui.mouseDown()  # Press the mouse button down
-        time.sleep(1)  # Hold the mouse button for 1 second (adjust as needed)
-        pyautogui.mouseUp()  # Release the mouse button
-        
-        # Add a short delay after the click to ensure it's registered
-        time.sleep(0.5)
-    else:
-        print("Image not found on the screen.")
-
-# Function to check if the inventory is full
-def check_inventory_full():
+# Function to drop items from the inventory by Shift + Left Click
+def drop_items_from_inventory():
     if inventory_region is None:
         print("Inventory region is not defined.")
-        return False
+        return
 
     # Take a screenshot of the screen using pyautogui
     screenshot = pyautogui.screenshot()
@@ -128,81 +87,46 @@ def check_inventory_full():
     screenshot = np.array(screenshot)  # Convert to NumPy array
     screenshot = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR
 
-    # Crop the image to the selected inventory region
-    inventory_screenshot = screenshot[inventory_region[1]:inventory_region[1] + inventory_region[3], inventory_region[0]:inventory_region[0] + inventory_region[2]]
+    # Check if the inventory is full
+    if is_inventory_full(screenshot, inventory_region):
+        print("Inventory is full. Dropping items...")
 
-    # Load the inventory slot template image
-    inventory_slot = cv2.imread(INVENTORY_SLOT_PATH)
-
-    if inventory_slot is None:
-        print(f"Error: Inventory slot image could not be loaded from {INVENTORY_SLOT_PATH}")
-        return False
-
-    # Convert both the screenshot region and the inventory slot template to grayscale
-    inventory_region_gray = cv2.cvtColor(inventory_screenshot, cv2.COLOR_BGR2GRAY)
-    inventory_slot_gray = cv2.cvtColor(inventory_slot, cv2.COLOR_BGR2GRAY)
-
-    # Perform template matching to find the inventory slots
-    result = cv2.matchTemplate(inventory_region_gray, inventory_slot_gray, cv2.TM_CCOEFF_NORMED)
-
-    # Get the locations of the matches
-    threshold = 0.9  # High confidence threshold for a match
-    locations = np.where(result >= threshold)
-
-    # Check if the number of matches is equal to the number of inventory slots
-    if len(locations[0]) == 27:  # Adjust this number based on your inventory size (e.g., 28 slots in OSRS)
-        print("Inventory is full!")
-        return True
-    else:
-        print("Inventory is not full yet.")
-        return False
-
-# Function to drop all items in the inventory
-def drop_inventory_items():
-    # Load the inventory slot image to get its width and height
-    inventory_slot = cv2.imread(INVENTORY_SLOT_PATH)
-    if inventory_slot is None:
-        print("Error: Inventory slot image could not be loaded.")
-        return
-    
-    slot_width, slot_height = inventory_slot.shape[1], inventory_slot.shape[0]
-
-    # Loop over each slot in the inventory and drop the item
-    for i in range(27):  # Assuming 28 slots (adjust if needed)
-        # Calculate the (x, y) position for the center of each inventory slot
-        # Ensure that the x and y offsets correspond to how your inventory grid is positioned
-        x = inventory_region[0] + (i % 7) * slot_width  # Assuming 7 columns
-        y = inventory_region[1] + (i // 7) * slot_height  # Assuming 4 rows
+        # Loop through the inventory slots and drop the items
+        x, y, w, h = inventory_region
+        num_slots_x = w // 32  # Assuming each slot is 32px wide
+        num_slots_y = h // 32  # Assuming each slot is 32px high
         
-        # Debugging: draw a circle or rectangle around each calculated position
-        pyautogui.moveTo(x, y)
-        pyautogui.click()  # Click the slot first to verify the position
-        print(f"Clicked slot {i + 1} at ({x}, {y})")
+        for row in range(num_slots_y):
+            for col in range(num_slots_x):
+                # Calculate the center position of each slot
+                slot_x = x + col * 32 + 16  # 16px is half the slot width for center
+                slot_y = y + row * 32 + 16  # 16px is half the slot height for center
 
-        # Focus the game window before clicking
-        focus_game_window()
+                # Focus the game window before clicking
+                focus_game_window()
+                time.sleep(0.2)  # Ensure a small delay before interacting with the game
+                
+                # Move to the slot and perform Shift + Left Click to drop the item
+                pyautogui.moveTo(slot_x, slot_y)
+                time.sleep(0.2)  # Small delay to simulate a more human-like movement
+                pyautogui.keyDown('shift')  # Hold down the 'Shift' key
+                pyautogui.click()  # Left click to drop the item
+                pyautogui.keyUp('shift')  # Release the 'Shift' key
+                
+                # Add a short delay after each click to ensure it's registered
+                time.sleep(0.5)
 
-        # Move to the slot and hold shift, then click
-        pyautogui.moveTo(x, y, duration=0.2)  # Move smoothly to the slot (adjust duration as needed)
-        pyautogui.keyDown('shift')  # Press down Shift key
-        pyautogui.click()  # Click the inventory slot to drop the item
-        pyautogui.keyUp('shift')  # Release the Shift key
-        print(f"Dropped item in slot {i + 1}")
+                print(f"Dropped item from slot ({col+1},{row+1})")
 
-        # Wait a moment before proceeding to the next slot to ensure the action is registered
-        time.sleep(1)  # Increased delay to ensure the shift-click is properly registered
+    else:
+        print("Inventory is not full.")
 
 # Main loop to repeatedly search and click with random delays
 def main():
     global tree_region, inventory_region
 
-    # Select the region for the tree and inventory dynamically
-    print("Select the tree region (draw a box around the tree on the screen):")
-    tree_region = select_region("Select Tree Region")
+    print("Tree and Inventory regions are set in the code.")
 
-    print("Select the inventory region (draw a box around the inventory on the screen):")
-    inventory_region = select_region("Select Inventory Region")
-    
     while True:
         # Check if the 'Q' key is pressed, if so, break the loop and stop the script
         if keyboard.is_pressed('q'):  # 'q' to quit
@@ -211,10 +135,8 @@ def main():
         
         find_and_click_tree()  # Perform the image search and click
 
-        # Check if the inventory is full
-        if check_inventory_full():
-            print("Inventory is full. Dropping items...")
-            drop_inventory_items()  # Drop the items
+        # Check if the inventory is full and drop items if necessary
+        drop_items_from_inventory()
 
         # Randomly sleep between 15 to 30 seconds
         random_delay = random.uniform(10, 20)
